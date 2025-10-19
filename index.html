@@ -4,6 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ClientMeet — Учёт встреч</title>
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
     <style>
         * {
             margin: 0;
@@ -815,6 +818,28 @@
             transform: rotate(180deg);
         }
         
+        /* Индикатор синхронизации */
+        .sync-status {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: rgba(0,0,0,0.7);
+            color: white;
+            padding: 8px 12px;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            z-index: 1000;
+            display: none;
+        }
+        
+        .sync-status.syncing {
+            background: rgba(255,193,7,0.9);
+        }
+        
+        .sync-status.synced {
+            background: rgba(40,167,69,0.9);
+        }
+        
         @media (max-width: 768px) {
             .main-content {
                 padding: 15px;
@@ -1124,31 +1149,150 @@
             </div>
         </div>
     </div>
+    
+    <!-- Индикатор синхронизации -->
+    <div class="sync-status" id="syncStatus">Синхронизация...</div>
 
     <script>
-        // Конфигурация пользователей (с поддержкой PIN-кодов)
-        let USERS = [
-            { id: 1, name: 'Ярослав', role: 'admin', pin: '1234' },
-            { id: 2, name: 'Никита', role: 'user', pin: null },
-            { id: 3, name: 'Ирина', role: 'user', pin: null },
-            { id: 4, name: 'Миша', role: 'user', pin: null },
-            { id: 5, name: 'Дима', role: 'user', pin: null },
-            { id: 6, name: 'Лера', role: 'user', pin: null }
-        ];
+        // 🔥 ВАША КОНФИГУРАЦИЯ FIREBASE 🔥
+        const firebaseConfig = {
+            apiKey: "AIzaSyBHEIl9q8FsVAe8xDcge-5GD0iboJosIHM",
+            authDomain: "clientmeet-2gis.firebaseapp.com",
+            databaseURL: "https://clientmeet-2gis-default-rtdb.firebaseio.com",
+            projectId: "clientmeet-2gis",
+            storageBucket: "clientmeet-2gis.firebasestorage.app",
+            messagingSenderId: "1059893544653",
+            appId: "1:1059893544653:web:ce91f40e0a18394ddbcb84"
+        };
         
+        // Инициализация Firebase
+        firebase.initializeApp(firebaseConfig);
+        const database = firebase.database();
+        
+        // Конфигурация пользователей (теперь будет загружаться из Firebase)
+        let USERS = [];
         let currentUser = null;
         let currentEditingMeetingId = null;
         let currentMonth = new Date().getMonth();
         let currentYear = new Date().getFullYear();
         let hideWeekends = false;
-        let pendingUserId = null; // Для хранения ID пользователя, ожидающего ввода PIN
+        let pendingUserId = null;
         
-        // Улучшенные цвета для сотрудников (более контрастные и различимые)
         const USER_COLORS = [
             'color-1', 'color-2', 'color-3', 'color-4', 'color-5', 
             'color-6', 'color-7', 'color-8', 'color-9', 'color-10',
             'color-11', 'color-12'
         ];
+        
+        // Индикатор синхронизации
+        const syncStatus = document.getElementById('syncStatus');
+        
+        function showSyncStatus(status) {
+            if (status === 'syncing') {
+                syncStatus.textContent = 'Синхронизация...';
+                syncStatus.className = 'sync-status syncing';
+                syncStatus.style.display = 'block';
+            } else if (status === 'synced') {
+                syncStatus.textContent = 'Синхронизировано';
+                syncStatus.className = 'sync-status synced';
+                setTimeout(() => {
+                    syncStatus.style.display = 'none';
+                }, 2000);
+            }
+        }
+        
+        // ========== ЗАГРУЗКА ДАННЫХ ИЗ FIREBASE ==========
+        
+        function loadUsersFromFirebase() {
+            return new Promise((resolve) => {
+                const usersRef = database.ref('users');
+                usersRef.once('value', (snapshot) => {
+                    const usersData = snapshot.val();
+                    if (usersData) {
+                        USERS = Object.values(usersData);
+                        // Убедимся, что у Ярослава есть PIN по умолчанию
+                        const yaroslav = USERS.find(u => u.name === 'Ярослав');
+                        if (yaroslav && !yaroslav.pin) {
+                            yaroslav.pin = '1234';
+                            saveUsersToFirebase();
+                        }
+                    } else {
+                        // Инициализация первоначальных данных
+                        USERS = [
+                            { id: 1, name: 'Ярослав', role: 'admin', pin: '1234' },
+                            { id: 2, name: 'Никита', role: 'user', pin: null },
+                            { id: 3, name: 'Ирина', role: 'user', pin: null },
+                            { id: 4, name: 'Миша', role: 'user', pin: null },
+                            { id: 5, name: 'Дима', role: 'user', pin: null },
+                            { id: 6, name: 'Лера', role: 'user', pin: null }
+                        ];
+                        saveUsersToFirebase();
+                    }
+                    resolve();
+                });
+            });
+        }
+        
+        function saveUsersToFirebase() {
+            const usersObj = {};
+            USERS.forEach(user => {
+                usersObj[user.id] = user;
+            });
+            database.ref('users').set(usersObj);
+            showSyncStatus('synced');
+        }
+        
+        function getMeetingsFromFirebase() {
+            return new Promise((resolve) => {
+                const meetingsRef = database.ref('meetings');
+                meetingsRef.once('value', (snapshot) => {
+                    const meetingsData = snapshot.val();
+                    const meetings = meetingsData ? Object.values(meetingsData) : [];
+                    resolve(meetings);
+                });
+            });
+        }
+        
+        function saveMeetingToFirebase(meeting) {
+            showSyncStatus('syncing');
+            const meetingsRef = database.ref('meetings');
+            meetingsRef.push(meeting).then(() => {
+                showSyncStatus('synced');
+            });
+        }
+        
+        function updateMeetingInFirebase(meetingId, updatedMeeting) {
+            showSyncStatus('syncing');
+            const meetingsRef = database.ref('meetings');
+            // Найдем ключ встречи по ID
+            meetingsRef.once('value', (snapshot) => {
+                const meetings = snapshot.val();
+                if (meetings) {
+                    const key = Object.keys(meetings).find(k => meetings[k].id == meetingId);
+                    if (key) {
+                        meetingsRef.child(key).update(updatedMeeting).then(() => {
+                            showSyncStatus('synced');
+                        });
+                    }
+                }
+            });
+        }
+        
+        function deleteMeetingFromFirebase(meetingId) {
+            showSyncStatus('syncing');
+            const meetingsRef = database.ref('meetings');
+            meetingsRef.once('value', (snapshot) => {
+                const meetings = snapshot.val();
+                if (meetings) {
+                    const key = Object.keys(meetings).find(k => meetings[k].id == meetingId);
+                    if (key) {
+                        meetingsRef.child(key).remove().then(() => {
+                            showSyncStatus('synced');
+                        });
+                    }
+                }
+            });
+        }
         
         // ========== ПОЛНЫЙ СБРОС СОСТОЯНИЯ ==========
         function resetAppState() {
@@ -1277,8 +1421,8 @@
         
         // ========== ФУНКЦИИ АНАЛИТИКИ ==========
         
-        function calculateAnalytics() {
-            const meetings = getMeetings();
+        async function calculateAnalytics() {
+            const meetings = await getMeetingsFromFirebase();
             const today = new Date();
             const thirtyDaysAgo = new Date();
             thirtyDaysAgo.setDate(today.getDate() - 30);
@@ -1315,8 +1459,8 @@
             };
         }
         
-        function renderAnalytics() {
-            const analytics = calculateAnalytics();
+        async function renderAnalytics() {
+            const analytics = await calculateAnalytics();
             const analyticsGrid = document.getElementById('analyticsGrid');
             
             if (!analyticsGrid) return;
@@ -1358,10 +1502,36 @@
         }
         
         // Инициализация приложения
-        document.addEventListener('DOMContentLoaded', function() {
-            loadUsers();
+        document.addEventListener('DOMContentLoaded', async function() {
+            await loadUsersFromFirebase();
             renderUsers();
             loadCurrentUser();
+            
+            // Настройка realtime-обновлений для встреч
+            const meetingsRef = database.ref('meetings');
+            meetingsRef.on('value', (snapshot) => {
+                // Данные обновились, можно обновить интерфейс при необходимости
+                if (document.getElementById('dashboard').style.display !== 'none') {
+                    renderMeetings();
+                    renderCalendar();
+                    if (currentUser && currentUser.role === 'admin') {
+                        renderAnalytics();
+                    }
+                }
+            });
+            
+            // Настройка realtime-обновлений для пользователей
+            const usersRef = database.ref('users');
+            usersRef.on('value', (snapshot) => {
+                const usersData = snapshot.val();
+                if (usersData) {
+                    USERS = Object.values(usersData);
+                    renderUsers();
+                    if (currentUser && currentUser.role === 'admin') {
+                        renderUsersManagement();
+                    }
+                }
+            });
             
             // Закрытие модального окна при клике вне его
             const editModal = document.getElementById('editModal');
@@ -1382,27 +1552,6 @@
             if (filterEmployeeSelect) filterEmployeeSelect.addEventListener('change', applyFilters);
             if (searchClient) searchClient.addEventListener('input', applyFilters);
         });
-        
-        // Загрузка пользователей из localStorage
-        function loadUsers() {
-            const savedUsers = localStorage.getItem('users');
-            if (savedUsers) {
-                USERS = JSON.parse(savedUsers);
-                // Убедимся, что у Ярослава есть PIN по умолчанию
-                const yaroslav = USERS.find(u => u.name === 'Ярослав');
-                if (yaroslav && !yaroslav.pin) {
-                    yaroslav.pin = '1234';
-                    saveUsers();
-                }
-            } else {
-                saveUsers();
-            }
-        }
-        
-        // Сохранение пользователей в localStorage
-        function saveUsers() {
-            localStorage.setItem('users', JSON.stringify(USERS));
-        }
         
         // Отображение карточек пользователей
         function renderUsers() {
@@ -1642,7 +1791,7 @@
         }
         
         // Добавление встречи
-        function addMeeting() {
+        async function addMeeting() {
             const clientName = document.getElementById('clientName').value.trim();
             const meetingDate = document.getElementById('meetingDate').value;
             const meetingNotes = document.getElementById('meetingNotes').value.trim();
@@ -1652,9 +1801,8 @@
                 return;
             }
             
-            const meetings = getMeetings();
             const newMeeting = {
-                id: Date.now(), // уникальный ID
+                id: Date.now(),
                 userId: currentUser.id,
                 userName: currentUser.name,
                 clientName: clientName,
@@ -1663,15 +1811,12 @@
                 timestamp: new Date().toISOString()
             };
             
-            meetings.push(newMeeting);
-            localStorage.setItem('meetings', JSON.stringify(meetings));
+            await saveMeetingToFirebase(newMeeting);
             
             // Очистить форму
             document.getElementById('clientName').value = '';
             document.getElementById('meetingNotes').value = '';
             setupDateInput();
-            
-            // Скрыть форму после добавления
             toggleAddMeetingForm();
             
             renderMeetings();
@@ -1681,14 +1826,13 @@
             }
         }
         
-        // Получение встреч из localStorage
-        function getMeetings() {
-            const meetingsStr = localStorage.getItem('meetings');
-            return meetingsStr ? JSON.parse(meetingsStr) : [];
+        // Получение встреч из Firebase
+        async function getMeetings() {
+            return await getMeetingsFromFirebase();
         }
         
         // Применение фильтров и поиска
-        function applyFilters() {
+        async function applyFilters() {
             renderMeetings();
         }
         
@@ -1714,11 +1858,11 @@
         }
         
         // Отображение встреч с фильтрацией и умным поиском
-        function renderMeetings() {
+        async function renderMeetings() {
             const meetingsList = document.getElementById('meetingsList');
             if (!meetingsList) return;
             
-            const allMeetings = getMeetings();
+            const allMeetings = await getMeetingsFromFirebase();
             
             // Фильтрация и поиск
             let filteredMeetings = allMeetings;
@@ -1776,8 +1920,8 @@
         }
         
         // Открытие модального окна редактирования
-        function openEditModal(meetingId) {
-            const meetings = getMeetings();
+        async function openEditModal(meetingId) {
+            const meetings = await getMeetingsFromFirebase();
             const meeting = meetings.find(m => m.id === meetingId);
             
             if (!meeting) return;
@@ -1806,7 +1950,7 @@
         }
         
         // Сохранение отредактированной встречи
-        function saveEditedMeeting() {
+        async function saveEditedMeeting() {
             const clientName = document.getElementById('editClientName').value.trim();
             const meetingDate = document.getElementById('editMeetingDate').value;
             const meetingNotes = document.getElementById('editMeetingNotes').value.trim();
@@ -1816,18 +1960,14 @@
                 return;
             }
             
-            const meetings = getMeetings();
-            const meetingIndex = meetings.findIndex(m => m.id === currentEditingMeetingId);
+            const updatedMeeting = {
+                clientName: clientName,
+                date: meetingDate,
+                notes: meetingNotes,
+                lastModified: new Date().toISOString()
+            };
             
-            if (meetingIndex === -1) return;
-            
-            // Обновление данных встречи
-            meetings[meetingIndex].clientName = clientName;
-            meetings[meetingIndex].date = meetingDate;
-            meetings[meetingIndex].notes = meetingNotes;
-            meetings[meetingIndex].lastModified = new Date().toISOString();
-            
-            localStorage.setItem('meetings', JSON.stringify(meetings));
+            await updateMeetingInFirebase(currentEditingMeetingId, updatedMeeting);
             closeEditModal();
             renderMeetings();
             renderCalendar();
@@ -1837,15 +1977,12 @@
         }
         
         // Удаление встречи
-        function deleteMeeting() {
+        async function deleteMeeting() {
             if (!confirm('Вы уверены, что хотите удалить эту встречу?')) {
                 return;
             }
             
-            const meetings = getMeetings();
-            const filteredMeetings = meetings.filter(m => m.id !== currentEditingMeetingId);
-            
-            localStorage.setItem('meetings', JSON.stringify(filteredMeetings));
+            await deleteMeetingFromFirebase(currentEditingMeetingId);
             closeEditModal();
             renderMeetings();
             renderCalendar();
@@ -1870,7 +2007,7 @@
         
         // ========== КАЛЕНДАРЬ ==========
         
-        function renderCalendar() {
+        async function renderCalendar() {
             const calendarTitle = document.getElementById('calendarTitle');
             const calendarGrid = document.getElementById('calendarGrid');
             
@@ -1911,7 +2048,7 @@
             });
             
             // Получить все встречи
-            const allMeetings = getMeetings();
+            const allMeetings = await getMeetingsFromFirebase();
             let filteredMeetings;
             if (currentUser && currentUser.role === 'admin') {
                 filteredMeetings = allMeetings;
@@ -2119,7 +2256,7 @@
             const userIndex = USERS.findIndex(u => u.id === currentUser.id);
             if (userIndex !== -1) {
                 USERS[userIndex].pin = newPin;
-                saveUsers();
+                saveUsersToFirebase();
                 messageDiv.textContent = 'PIN-код успешно изменен!';
                 messageDiv.style.color = '#28a745';
                 messageDiv.style.display = 'block';
@@ -2171,7 +2308,7 @@
                 pin: pin
             });
             
-            saveUsers();
+            saveUsersToFirebase();
             renderUsers();
             renderUsersManagement();
             
@@ -2195,12 +2332,25 @@
             
             if (confirm(`Вы уверены, что хотите удалить сотрудника "${userToDelete.name}"?`)) {
                 // Удалить встречи этого пользователя
-                const meetings = getMeetings().filter(m => m.userId !== userId);
-                localStorage.setItem('meetings', JSON.stringify(meetings));
+                const meetingsRef = database.ref('meetings');
+                meetingsRef.once('value', (snapshot) => {
+                    const meetings = snapshot.val();
+                    if (meetings) {
+                        const keysToDelete = [];
+                        Object.keys(meetings).forEach(key => {
+                            if (meetings[key].userId == userId) {
+                                keysToDelete.push(key);
+                            }
+                        });
+                        keysToDelete.forEach(key => {
+                            meetingsRef.child(key).remove();
+                        });
+                    }
+                });
                 
                 // Удалить пользователя
                 USERS = USERS.filter(u => u.id !== userId);
-                saveUsers();
+                saveUsersToFirebase();
                 renderUsers();
                 renderUsersManagement();
                 renderMeetings();
