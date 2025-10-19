@@ -1356,37 +1356,72 @@
                 usersGrid.appendChild(userCard);
             });
         }
+        // Полный сброс состояния приложения
+function resetAppState() {
+    // Сброс переменных
+    currentUser = null;
+    currentEditingMeetingId = null;
+    currentMonth = new Date().getMonth();
+    currentYear = new Date().getFullYear();
+    hideWeekends = false;
+    
+    // Очистка форм и фильтров
+    document.getElementById('clientName').value = '';
+    document.getElementById('meetingNotes').value = '';
+    document.getElementById('searchClient').value = '';
+    document.getElementById('filterDate').value = '';
+    document.getElementById('filterEmployeeSelect').value = '';
+    
+    // Скрытие раскрывающейся формы добавления встречи
+    const meetingForm = document.getElementById('meetingForm');
+    const addMeetingButton = document.querySelector('.add-meeting-toggle');
+    if (meetingForm && addMeetingButton) {
+        meetingForm.style.display = 'none';
+        addMeetingButton.classList.remove('active');
+    }
+    
+    // Скрытие модальных окон
+    document.getElementById('editModal').style.display = 'none';
+    document.getElementById('settingsPanel').classList.remove('open');
+    document.getElementById('settingsOverlay').classList.remove('active');
+}
+       // Вход пользователя (обновленная версия)
+function loginUser(user) {
+    // Полный сброс состояния перед входом
+    resetAppState();
+    
+    if (user.role === 'admin') {
+        // Показать экран PIN
+        document.getElementById('loginScreen').style.display = 'none';
+        document.getElementById('pinScreen').style.display = 'block';
+        document.getElementById('pinInput').value = ''; // Очистить поле PIN
+        document.getElementById('pinError').style.display = 'none';
+        document.getElementById('pinInput').focus();
+    } else {
+        // Вход без PIN
+        setCurrentUser(user);
+        showDashboard();
+    }
+}
         
-        // Вход пользователя
-        function loginUser(user) {
-            if (user.role === 'admin') {
-                // Показать экран PIN
-                document.getElementById('loginScreen').style.display = 'none';
-                document.getElementById('pinScreen').style.display = 'block';
-                document.getElementById('pinInput').focus();
-            } else {
-                // Вход без PIN
-                setCurrentUser(user);
-                showDashboard();
-            }
-        }
-        
-        // Проверка PIN
-        function verifyPin() {
-            const pinInput = document.getElementById('pinInput').value;
-            const pinError = document.getElementById('pinError');
-            
-            if (pinInput === ADMIN_PIN) {
-                const adminUser = USERS.find(u => u.role === 'admin');
-                setCurrentUser(adminUser);
-                showDashboard();
-            } else {
-                pinError.textContent = 'Неверный PIN-код!';
-                pinError.style.display = 'block';
-                document.getElementById('pinInput').value = '';
-                document.getElementById('pinInput').focus();
-            }
-        }
+      // Проверка PIN (обновленная версия)
+function verifyPin() {
+    const pinInput = document.getElementById('pinInput').value;
+    const pinError = document.getElementById('pinError');
+    
+    if (pinInput === ADMIN_PIN) {
+        const adminUser = USERS.find(u => u.role === 'admin');
+        // Уже сброшено в loginUser, но на всякий случай
+        resetAppState();
+        setCurrentUser(adminUser);
+        showDashboard();
+    } else {
+        pinError.textContent = 'Неверный PIN-код!';
+        pinError.style.display = 'block';
+        document.getElementById('pinInput').value = '';
+        document.getElementById('pinInput').focus();
+    }
+}
         
         // Отмена ввода PIN
         function cancelPin() {
@@ -1470,14 +1505,14 @@
             document.getElementById('meetingDate').value = today;
         }
         
-        // Выход из системы
-        function logout() {
-            currentUser = null;
-            localStorage.removeItem('currentUser');
-            document.getElementById('dashboard').style.display = 'none';
-            document.getElementById('appHeader').style.display = 'none';
-            document.getElementById('loginScreen').style.display = 'block';
-        }
+        // Выход из системы (обновленная версия)
+function logout() {
+    resetAppState();
+    localStorage.removeItem('currentUser');
+    document.getElementById('dashboard').style.display = 'none';
+    document.getElementById('appHeader').style.display = 'none';
+    document.getElementById('loginScreen').style.display = 'block';
+}
         
         // Переключение вида
         function switchView(view) {
