@@ -2005,154 +2005,194 @@
             }
         });
         
-        // ========== КАЛЕНДАРЬ ==========
-        
-        async function renderCalendar() {
-            const calendarTitle = document.getElementById('calendarTitle');
-            const calendarGrid = document.getElementById('calendarGrid');
-            
-            if (!calendarTitle || !calendarGrid) return;
-            
-            // Обновить заголовок
-            const monthNames = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь',
-                              'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'];
-            calendarTitle.textContent = `${monthNames[currentMonth]} ${currentYear}`;
-            
-            // Очистить календарь
-            calendarGrid.innerHTML = '';
-            
-            // Добавить заголовки дней недели (с учетом выходных)
-            const dayNames = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
-            const columns = hideWeekends ? 5 : 7;
-            const visibleDays = hideWeekends ? dayNames.slice(0, 5) : dayNames;
-            
-            calendarGrid.style.gridTemplateColumns = `repeat(${columns}, 1fr)`;
-            
-            visibleDays.forEach(day => {
-                const dayHeader = document.createElement('div');
-                dayHeader.className = 'calendar-day-header';
-                dayHeader.textContent = day;
-                calendarGrid.appendChild(dayHeader);
-            });
-            
-            // Получить первый день месяца и количество дней
-            const firstDay = new Date(currentYear, currentMonth, 1);
-            const lastDay = new Date(currentYear, currentMonth + 1, 0);
-            const daysInMonth = lastDay.getDate();
-            const startDayOfWeek = firstDay.getDay() || 7; // Воскресенье = 0, делаем его 7
-            
-            // Создать карту цветов для пользователей
-            const userColorMap = {};
-            USERS.forEach((user, index) => {
-                userColorMap[user.id] = USER_COLORS[index % USER_COLORS.length];
-            });
-            
-            // Получить все встречи
-            const allMeetings = await getMeetingsFromFirebase();
-            let filteredMeetings;
-            if (currentUser && currentUser.role === 'admin') {
-                filteredMeetings = allMeetings;
-            } else if (currentUser) {
-                filteredMeetings = allMeetings.filter(m => m.userId === currentUser.id);
-            } else {
-                filteredMeetings = [];
+// ========== КАЛЕНДАРЬ ==========
+
+async function renderCalendar() {
+    const calendarTitle = document.getElementById('calendarTitle');
+    const calendarGrid = document.getElementById('calendarGrid');
+
+    if (!calendarTitle || !calendarGrid) return;
+
+    // Обновить заголовок
+    const monthNames = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь',
+                      'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'];
+    calendarTitle.textContent = `${monthNames[currentMonth]} ${currentYear}`;
+
+    // Очистить календарь
+    calendarGrid.innerHTML = '';
+
+    // Добавить заголовки дней недели (с учетом выходных)
+    const dayNames = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
+    const visibleDays = hideWeekends ? dayNames.slice(0, 5) : dayNames;
+    const columns = visibleDays.length;
+
+    calendarGrid.style.gridTemplateColumns = `repeat(${columns}, 1fr)`;
+
+    visibleDays.forEach(day => {
+        const dayHeader = document.createElement('div');
+        dayHeader.className = 'calendar-day-header';
+        dayHeader.textContent = day;
+        calendarGrid.appendChild(dayHeader);
+    });
+
+    // Получить первый день месяца и количество дней
+    const firstDay = new Date(currentYear, currentMonth, 1);
+    const lastDay = new Date(currentYear, currentMonth + 1, 0);
+    const daysInMonth = lastDay.getDate();
+    const startDayOfWeek = firstDay.getDay() || 7; // Воскресенье = 0, делаем его 7
+
+    // Создать карту цветов для пользователей
+    const userColorMap = {};
+    USERS.forEach((user, index) => {
+        userColorMap[user.id] = USER_COLORS[index % USER_COLORS.length];
+    });
+
+    // Получить все встречи
+    const allMeetings = await getMeetingsFromFirebase();
+    let filteredMeetings;
+    if (currentUser && currentUser.role === 'admin') {
+        filteredMeetings = allMeetings;
+    } else if (currentUser) {
+        filteredMeetings = allMeetings.filter(m => m.userId === currentUser.id);
+    } else {
+        filteredMeetings = [];
+    }
+
+    // Группировать встречи по дате
+    const meetingsByDate = {};
+    filteredMeetings.forEach(meeting => {
+        if (!meetingsByDate[meeting.date]) {
+            meetingsByDate[meeting.date] = [];
+        }
+        meetingsByDate[meeting.date].push(meeting);
+    });
+
+    // Текущая дата для выделения "сегодня"
+    const today = new Date();
+    const todayDateStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+
+    // Функция для проверки выходного дня
+    function isWeekend(date) {
+        const day = date.getDay();
+        return day === 0 || day === 6; // Воскресенье = 0, Суббота = 6
+    }
+
+    // Добавить дни предыдущего месяца
+    const prevMonthLastDay = new Date(currentYear, currentMonth, 0).getDate();
+
+    if (!hideWeekends) {
+        // Показываем все дни, включая выходные
+        for (let i = startDayOfWeek - 1; i > 0; i--) {
+            const dayNum = prevMonthLastDay - i + 1;
+            const date = new Date(currentYear, currentMonth - 1, dayNum);
+
+            const dayDiv = document.createElement('div');
+            dayDiv.className = 'calendar-day other-month';
+            if (isWeekend(date)) {
+                dayDiv.classList.add('weekend');
             }
-            
-            // Группировать встречи по дате
-            const meetingsByDate = {};
-            filteredMeetings.forEach(meeting => {
-                if (!meetingsByDate[meeting.date]) {
-                    meetingsByDate[meeting.date] = [];
-                }
-                meetingsByDate[meeting.date].push(meeting);
-            });
-            
-            // Текущая дата для выделения "сегодня"
-            const today = new Date();
-            const todayDateStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-            
-            // Функция для проверки выходного дня
-            function isWeekend(date) {
-                const day = date.getDay();
-                return day === 0 || day === 6; // Воскресенье = 0, Суббота = 6
-            }
-            
-            // Добавить дни предыдущего месяца
-            const prevMonthLastDay = new Date(currentYear, currentMonth, 0).getDate();
-            let dayCounter = 1;
-            
-            if (!hideWeekends) {
-                for (let i = startDayOfWeek - 1; i > 0; i--) {
-                    const dayNum = prevMonthLastDay - i + 1;
-                    const date = new Date(currentYear, currentMonth - 1, dayNum);
-                    if (hideWeekends && isWeekend(date)) continue;
-                    
-                    const dayDiv = document.createElement('div');
-                    dayDiv.className = 'calendar-day other-month';
-                    if (isWeekend(date)) {
-                        dayDiv.classList.add('weekend');
-                    }
-                    dayDiv.innerHTML = `<span class="calendar-day-number">${dayNum}</span>`;
-                    calendarGrid.appendChild(dayDiv);
-                    dayCounter++;
-                }
-            }
-            
-            // Добавить дни текущего месяца
-            for (let day = 1; day <= daysInMonth; day++) {
-                const date = new Date(currentYear, currentMonth, day);
-                if (hideWeekends && isWeekend(date)) continue;
-                
+            dayDiv.innerHTML = `<span class="calendar-day-number">${dayNum}</span>`;
+            calendarGrid.appendChild(dayDiv);
+        }
+    } else {
+        // Показываем только будние дни предыдущего месяца
+        for (let i = startDayOfWeek - 1; i > 0; i--) {
+            const dayNum = prevMonthLastDay - i + 1;
+            const date = new Date(currentYear, currentMonth - 1, dayNum);
+            if (!isWeekend(date)) {
                 const dayDiv = document.createElement('div');
-                dayDiv.className = 'calendar-day';
-                const dateStr = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-                
-                if (isWeekend(date)) {
-                    dayDiv.classList.add('weekend');
-                }
-                
-                // Выделить сегодняшний день
-                if (dateStr === todayDateStr) {
-                    dayDiv.classList.add('today');
-                }
-                
-                dayDiv.innerHTML = `<span class="calendar-day-number">${day}</span>`;
-                
-                // Добавить встречи на этот день
-                if (meetingsByDate[dateStr]) {
-                    meetingsByDate[dateStr].forEach(meeting => {
-                        const meetingDiv = document.createElement('div');
-                        meetingDiv.className = `calendar-meeting ${userColorMap[meeting.userId] || 'color-1'}`;
-                        meetingDiv.title = `${meeting.clientName}: ${meeting.notes || ''}`;
-                        meetingDiv.textContent = meeting.clientName;
-                        meetingDiv.onclick = () => openEditModal(meeting.id);
-                        dayDiv.appendChild(meetingDiv);
-                    });
-                }
-                
+                dayDiv.className = 'calendar-day other-month';
+                dayDiv.innerHTML = `<span class="calendar-day-number">${dayNum}</span>`;
                 calendarGrid.appendChild(dayDiv);
             }
-            
-            // Добавить дни следующего месяца (чтобы заполнить сетку)
-            if (!hideWeekends) {
-                const totalCells = hideWeekends ? 30 : 42; // 5 или 6 недель
-                const currentCells = calendarGrid.children.length;
-                const nextMonthDays = totalCells - currentCells;
-                
-                for (let day = 1; day <= nextMonthDays; day++) {
-                    const date = new Date(currentYear, currentMonth + 1, day);
-                    if (hideWeekends && isWeekend(date)) continue;
-                    
-                    const dayDiv = document.createElement('div');
-                    dayDiv.className = 'calendar-day other-month';
-                    if (isWeekend(date)) {
-                        dayDiv.classList.add('weekend');
-                    }
-                    dayDiv.innerHTML = `<span class="calendar-day-number">${day}</span>`;
-                    calendarGrid.appendChild(dayDiv);
-                }
+        }
+    }
+
+    // Добавить дни текущего месяца
+    for (let day = 1; day <= daysInMonth; day++) {
+        const date = new Date(currentYear, currentMonth, day);
+        if (hideWeekends && isWeekend(date)) continue;
+
+        const dayDiv = document.createElement('div');
+        dayDiv.className = 'calendar-day';
+        const dateStr = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+
+        if (!hideWeekends && isWeekend(date)) {
+            dayDiv.classList.add('weekend');
+        }
+
+        // Выделить сегодняшний день
+        if (dateStr === todayDateStr) {
+            dayDiv.classList.add('today');
+        }
+
+        dayDiv.innerHTML = `<span class="calendar-day-number">${day}</span>`;
+
+        // Добавить встречи на этот день
+        if (meetingsByDate[dateStr]) {
+            meetingsByDate[dateStr].forEach(meeting => {
+                const meetingDiv = document.createElement('div');
+                meetingDiv.className = `calendar-meeting ${userColorMap[meeting.userId] || 'color-1'}`;
+                meetingDiv.title = `${meeting.clientName}: ${meeting.notes || ''}`;
+                meetingDiv.textContent = meeting.clientName;
+                meetingDiv.onclick = () => openEditModal(meeting.id);
+                dayDiv.appendChild(meetingDiv);
+            });
+        }
+
+        calendarGrid.appendChild(dayDiv);
+    }
+
+    // Добавить дни следующего месяца (чтобы заполнить сетку)
+    if (!hideWeekends) {
+        const totalCells = 42; // 6 недель * 7 дней
+        const currentCells = calendarGrid.children.length;
+        const nextMonthDays = totalCells - currentCells;
+        const nextMonthFirstDay = new Date(currentYear, currentMonth + 1, 1);
+
+        for (let day = 1; day <= nextMonthDays; day++) {
+            const date = new Date(currentYear, currentMonth + 1, day);
+
+            const dayDiv = document.createElement('div');
+            dayDiv.className = 'calendar-day other-month';
+            if (isWeekend(date)) {
+                dayDiv.classList.add('weekend');
+            }
+            dayDiv.innerHTML = `<span class="calendar-day-number">${day}</span>`;
+            calendarGrid.appendChild(dayDiv);
+        }
+    } else {
+        // Для будних дней рассчитываем количество недель по-другому
+        const firstDayOfMonth = new Date(currentYear, currentMonth, 1);
+        const lastDayOfMonth = new Date(currentYear, currentMonth + 1, 0);
+
+        // Подсчитываем количество будних дней в месяце
+        let weekdaysCount = 0;
+        for (let day = 1; day <= daysInMonth; day++) {
+            const date = new Date(currentYear, currentMonth, day);
+            if (!isWeekend(date)) {
+                weekdaysCount++;
             }
         }
+
+        // Определяем, сколько недель нужно показать (максимум 6)
+        const weeksNeeded = Math.ceil((calendarGrid.children.length + (5 - (calendarGrid.children.length % 5 || 5))) / 5);
+        const maxWeeks = 6;
+        const totalCells = Math.min(weeksNeeded * 5, maxWeeks * 5);
+        const currentCells = calendarGrid.children.length;
+        const nextMonthDays = totalCells - currentCells;
+
+        for (let day = 1; day <= nextMonthDays; day++) {
+            const date = new Date(currentYear, currentMonth + 1, day);
+            if (!isWeekend(date)) {
+                const dayDiv = document.createElement('div');
+                dayDiv.className = 'calendar-day other-month';
+                dayDiv.innerHTML = `<span class="calendar-day-number">${day}</span>`;
+                calendarGrid.appendChild(dayDiv);
+            }
+        }
+    }
+}
         
         function changeMonth(delta) {
             currentMonth += delta;
